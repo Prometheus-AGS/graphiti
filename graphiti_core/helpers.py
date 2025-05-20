@@ -25,12 +25,16 @@ from neo4j import time as neo4j_time
 from numpy._typing import NDArray
 from typing_extensions import LiteralString
 
-load_dotenv()
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', 'server', '.env'))
 
 DEFAULT_DATABASE = os.getenv('DEFAULT_DATABASE', None)
 USE_PARALLEL_RUNTIME = bool(os.getenv('USE_PARALLEL_RUNTIME', False))
-SEMAPHORE_LIMIT = int(os.getenv('SEMAPHORE_LIMIT', 20))
-MAX_REFLEXION_ITERATIONS = int(os.getenv('MAX_REFLEXION_ITERATIONS', 0))
+# Handle the case where SEMAPHORE_LIMIT is an empty string
+semaphore_limit_env = os.getenv('SEMAPHORE_LIMIT', '20')
+SEMAPHORE_LIMIT = int(semaphore_limit_env) if semaphore_limit_env else 20
+# Handle the case where MAX_REFLEXION_ITERATIONS is an empty string
+max_reflexion_iterations_env = os.getenv('MAX_REFLEXION_ITERATIONS', '0')
+MAX_REFLEXION_ITERATIONS = int(max_reflexion_iterations_env) if max_reflexion_iterations_env else 0
 DEFAULT_PAGE_LIMIT = 20
 
 RUNTIME_QUERY: LiteralString = (

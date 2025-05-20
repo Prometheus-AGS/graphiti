@@ -17,14 +17,19 @@ limitations under the License.
 import logging
 from datetime import datetime
 from time import time
+import asyncio
+import os
 
 from dotenv import load_dotenv
 from neo4j import AsyncGraphDatabase
 from pydantic import BaseModel
 from typing_extensions import LiteralString
+from typing import Any, Optional
 
 from graphiti_core.cross_encoder.client import CrossEncoderClient
 from graphiti_core.cross_encoder.openai_reranker_client import OpenAIRerankerClient
+from graphiti_core.database.db_factory import DatabaseFactory, DatabaseType
+from graphiti_core.database.db_interface import GraphDBInterface
 from graphiti_core.edges import EntityEdge, EpisodicEdge
 from graphiti_core.embedder import EmbedderClient, OpenAIEmbedder
 from graphiti_core.graphiti_types import GraphitiClients
@@ -100,24 +105,44 @@ class Graphiti:
         embedder: EmbedderClient | None = None,
         cross_encoder: CrossEncoderClient | None = None,
         store_raw_episode_content: bool = True,
+        db_type: DatabaseType = DatabaseType.NEO4J,
+        namespace: str | None = None,
+        database: str | None = None,
     ):
         """
         Initialize a Graphiti instance.
 
-        This constructor sets up a connection to the Neo4j database and initializes
+        This constructor sets up a connection to the graph database and initializes
         the LLM client for natural language processing tasks.
 
         Parameters
         ----------
         uri : str
-            The URI of the Neo4j database.
+            The URI of the graph database.
         user : str
-            The username for authenticating with the Neo4j database.
+            The username for authenticating with the database.
         password : str
-            The password for authenticating with the Neo4j database.
+            The password for authenticating with the database.
         llm_client : LLMClient | None, optional
             An instance of LLMClient for natural language processing tasks.
             If not provided, a default OpenAIClient will be initialized.
+        embedder : EmbedderClient | None, optional
+            An instance of EmbedderClient for generating embeddings.
+            If not provided, a default OpenAIEmbedder will be initialized.
+        cross_encoder : CrossEncoderClient | None, optional
+            An instance of CrossEncoderClient for cross-encoding.
+            If not provided, a default OpenAIRerankerClient will be initialized.
+        store_raw_episode_content : bool, optional
+            Whether to store raw episode content in the database.
+        db_type : DatabaseType, optional
+            The type of database to use (neo4j or surrealdb).
+            Defaults to DatabaseType.NEO4J.
+        namespace : str | None, optional
+            The namespace to use for SurrealDB.
+            If not provided, defaults to "graphiti".
+        database : str | None, optional
+            The database to use for SurrealDB.
+            If not provided, defaults to "graphiti".
 
         Returns
         -------
@@ -125,21 +150,28 @@ class Graphiti:
 
         Notes
         -----
-        This method establishes a connection to the Neo4j database using the provided
+        This method establishes a connection to the database using the provided
         credentials. It also sets up the LLM client, either using the provided client
         or by creating a default OpenAIClient.
-
-        The default database name is set to 'neo4j'. If a different database name
-        is required, it should be specified in the URI or set separately after
-        initialization.
 
         The OpenAI API key is expected to be set in the environment variables.
         Make sure to set the OPENAI_API_KEY environment variable before initializing
         Graphiti if you're using the default OpenAIClient.
         """
-        self.driver = AsyncGraphDatabase.driver(uri, auth=(user, password))
+        self.db_type = db_type
+        self.db_adapter = DatabaseFactory.create_db_adapter(db_type)
         self.database = DEFAULT_DATABASE
         self.store_raw_episode_content = store_raw_episode_content
+        
+        # Initialize the database connection - don't use asyncio.run() here
+        # Connection will be established asynchronously later
+        self.uri = uri
+        self.user = user
+        self.password = password
+        self.namespace = namespace or os.environ.get("DATABASE_NAMESPACE", "graphiti")
+        self.db = database or os.environ.get("DATABASE_DB", "graphiti")
+        self.driver = None
+            
         if llm_client:
             self.llm_client = llm_client
         else:
@@ -153,18 +185,33 @@ class Graphiti:
         else:
             self.cross_encoder = OpenAIRerankerClient()
 
+        # Initialize clients without driver - will be set after connection
+        self.clients = None
+        
+    async def initialize(self):
+        """Initialize database connection asynchronously."""
+        # Connect to the database
+        if self.db_type == DatabaseType.SURREALDB:
+            await self.db_adapter.connect(self.uri, self.user, self.password, self.namespace, self.db)
+        else:
+            await self.db_adapter.connect(self.uri, self.user, self.password)
+        
+        # Get the driver for backward compatibility
+        self.driver = await self.db_adapter.get_driver()
+            
+        # Now initialize clients with the driver
         self.clients = GraphitiClients(
             driver=self.driver,
             llm_client=self.llm_client,
             embedder=self.embedder,
             cross_encoder=self.cross_encoder,
         )
-
+        
     async def close(self):
         """
-        Close the connection to the Neo4j database.
+        Close the connection to the database.
 
-        This method safely closes the driver connection to the Neo4j database.
+        This method safely closes the connection to the database.
         It should be called when the Graphiti instance is no longer needed or
         when the application is shutting down.
 
@@ -178,7 +225,7 @@ class Graphiti:
 
         Notes
         -----
-        It's important to close the driver connection to release system resources
+        It's important to close the connection to release system resources
         and ensure that all pending transactions are completed or rolled back.
         This method should be called as part of a cleanup process, potentially
         in a context manager or a shutdown hook.
@@ -190,13 +237,13 @@ class Graphiti:
             finally:
                 graphiti.close()
         """
-        await self.driver.close()
+        await self.db_adapter.close()
 
     async def build_indices_and_constraints(self, delete_existing: bool = False):
         """
-        Build indices and constraints in the Neo4j database.
+        Build indices and constraints in the database.
 
-        This method sets up the necessary indices and constraints in the Neo4j database
+        This method sets up the necessary indices and constraints in the database
         to optimize query performance and ensure data integrity for the knowledge graph.
 
         Parameters
@@ -213,19 +260,16 @@ class Graphiti:
         Notes
         -----
         This method should typically be called once during the initial setup of the
-        knowledge graph or when updating the database schema. It uses the
-        `build_indices_and_constraints` function from the
-        `graphiti_core.utils.maintenance.graph_data_operations` module to perform
-        the actual database operations.
+        knowledge graph or when updating the database schema.
 
-        The specific indices and constraints created depend on the implementation
-        of the `build_indices_and_constraints` function. Refer to that function's
-        documentation for details on the exact database schema modifications.
+        The specific indices and constraints created depend on the database adapter
+        implementation. Different databases may have different indexing capabilities
+        and constraints.
 
         Caution: Running this method on a large existing database may take some time
         and could impact database performance during execution.
         """
-        await build_indices_and_constraints(self.driver, delete_existing)
+        await self.db_adapter.build_indices(delete_existing)
 
     async def retrieve_episodes(
         self,
@@ -256,10 +300,53 @@ class Graphiti:
 
         Notes
         -----
-        The actual retrieval is performed by the `retrieve_episodes` function
-        from the `graphiti_core.utils` module.
+        This method forwards the request to the specific database adapter,
+        which handles the retrieval based on the database technology.
         """
-        return await retrieve_episodes(self.driver, reference_time, last_n, group_ids, source)
+        if self.db_type == DatabaseType.NEO4J:
+            # Use existing implementation for Neo4j
+            return await retrieve_episodes(self.driver, reference_time, last_n, group_ids, source)
+        else:
+            # For other databases, use the adapter
+            episodes_data = await self.db_adapter.get_episodes()
+            # Convert raw data to EpisodicNode objects
+            episodes = []
+            for data in episodes_data:
+                episode = EpisodicNode(
+                    uuid=data.get("id"),
+                    name=data.get("name"),
+                    group_id=data.get("group_id", ""),
+                    labels=data.get("labels", []),
+                    source=data.get("source", EpisodeType.message),
+                    content=data.get("content", ""),
+                    source_description=data.get("source_description", ""),
+                    created_at=data.get("created_at"),
+                    valid_at=data.get("valid_at"),
+                )
+                episodes.append(episode)
+            
+            # Filter by reference time and sort
+            filtered_episodes = [
+                ep for ep in episodes 
+                if ep.created_at <= reference_time
+            ]
+            filtered_episodes.sort(key=lambda ep: ep.created_at, reverse=True)
+            
+            # Apply additional filters
+            if group_ids:
+                filtered_episodes = [
+                    ep for ep in filtered_episodes
+                    if ep.group_id in group_ids
+                ]
+            
+            if source:
+                filtered_episodes = [
+                    ep for ep in filtered_episodes
+                    if ep.source == source
+                ]
+            
+            # Limit to last_n
+            return filtered_episodes[:last_n]
 
     async def add_episode(
         self,

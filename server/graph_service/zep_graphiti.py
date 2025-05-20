@@ -3,6 +3,7 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException
 from graphiti_core import Graphiti  # type: ignore
+from graphiti_core.database.db_factory import DatabaseType  # type: ignore
 from graphiti_core.edges import EntityEdge  # type: ignore
 from graphiti_core.errors import EdgeNotFoundError, GroupsEdgesNotFoundError, NodeNotFoundError
 from graphiti_core.llm_client import LLMClient  # type: ignore
@@ -15,8 +16,15 @@ logger = logging.getLogger(__name__)
 
 
 class ZepGraphiti(Graphiti):
-    def __init__(self, uri: str, user: str, password: str, llm_client: LLMClient | None = None):
-        super().__init__(uri, user, password, llm_client)
+    def __init__(
+        self,
+        uri: str,
+        user: str,
+        password: str,
+        llm_client: LLMClient | None = None,
+        db_type: DatabaseType = DatabaseType.NEO4J,
+    ):
+        super().__init__(uri, user, password, llm_client, db_type=db_type)
 
     async def save_entity_node(self, name: str, uuid: str, group_id: str, summary: str = ''):
         new_node = EntityNode(
@@ -72,11 +80,17 @@ class ZepGraphiti(Graphiti):
 
 
 async def get_graphiti(settings: ZepEnvDep):
+    db_type = settings.get_db_type()
     client = ZepGraphiti(
-        uri=settings.neo4j_uri,
-        user=settings.neo4j_user,
-        password=settings.neo4j_password,
+        uri=settings.get_db_uri(),
+        user=settings.get_db_user(),
+        password=settings.get_db_password(),
+        db_type=db_type,
     )
+
+    # Initialize the database connection
+    await client.initialize()
+
     if settings.openai_base_url is not None:
         client.llm_client.config.base_url = settings.openai_base_url
     if settings.openai_api_key is not None:
@@ -91,11 +105,17 @@ async def get_graphiti(settings: ZepEnvDep):
 
 
 async def initialize_graphiti(settings: ZepEnvDep):
+    db_type = settings.get_db_type()
     client = ZepGraphiti(
-        uri=settings.neo4j_uri,
-        user=settings.neo4j_user,
-        password=settings.neo4j_password,
+        uri=settings.get_db_uri(),
+        user=settings.get_db_user(),
+        password=settings.get_db_password(),
+        db_type=db_type,
     )
+
+    # Initialize the database connection
+    await client.initialize()
+
     await client.build_indices_and_constraints()
 
 

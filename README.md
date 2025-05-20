@@ -105,7 +105,9 @@ Graphiti is specifically designed to address the challenges of dynamic and frequ
 Requirements:
 
 - Python 3.10 or higher
-- Neo4j 5.26 or higher (serves as the embeddings storage backend)
+- One of the following database backends:
+  - Neo4j 5.26 or higher (default backend)
+  - SurrealDB latest version
 - OpenAI API key (for LLM inference and embedding)
 
 > [!IMPORTANT]
@@ -120,6 +122,8 @@ Optional:
 > [!TIP]
 > The simplest way to install Neo4j is via [Neo4j Desktop](https://neo4j.com/download/). It provides a user-friendly
 > interface to manage Neo4j instances and databases.
+>
+> For SurrealDB, you can use Docker or download directly from [SurrealDB website](https://surrealdb.com/install).
 
 ```bash
 pip install graphiti-core
@@ -153,6 +157,74 @@ pip install graphiti-core[anthropic,groq,google-genai]
 > Graphiti uses OpenAI for LLM inference and embedding. Ensure that an `OPENAI_API_KEY` is set in your environment.
 > Support for Anthropic and Groq LLM inferences is available, too. Other LLM providers may be supported via OpenAI
 > compatible APIs.
+
+### Connecting to a Database
+
+Graphiti now supports both Neo4j and SurrealDB as backend databases. You can specify which database to use when initializing Graphiti:
+
+```python
+from graphiti_core import Graphiti
+from graphiti_core.database.db_factory import DatabaseType
+
+# Using Neo4j (default)
+graphiti_neo4j = Graphiti(
+    uri="bolt://localhost:7687",
+    user="neo4j",
+    password="password",
+    db_type=DatabaseType.NEO4J
+)
+
+# Using SurrealDB
+graphiti_surrealdb = Graphiti(
+    uri="ws://localhost:8001/rpc",
+    user="root",
+    password="root",
+    db_type=DatabaseType.SURREALDB
+)
+```
+
+### Using Docker Compose
+
+Graphiti provides Docker Compose configurations for both Neo4j and SurrealDB:
+
+#### Neo4j (Default)
+```bash
+# Start with Neo4j
+docker-compose up -d
+```
+
+#### SurrealDB
+```bash
+# Start with SurrealDB
+docker-compose -f docker-compose-surrealdb.yml up -d
+```
+
+You can configure your database settings using environment variables:
+
+```
+# For Neo4j
+DATABASE_TYPE=neo4j
+DATABASE_URI=bolt://neo4j:7687
+DATABASE_USER=neo4j
+DATABASE_PASSWORD=password
+
+# For SurrealDB
+DATABASE_TYPE=surrealdb
+DATABASE_URI=ws://surrealdb:8000/rpc  # Use this inside Docker network
+# or
+DATABASE_URI=ws://localhost:8001/rpc  # Use this from your local machine
+DATABASE_USER=root
+DATABASE_PASSWORD=root
+```
+
+### Notes on SurrealDB Configuration
+
+When using SurrealDB, note that:
+
+1. The SurrealDB server runs on port 8000 inside the container
+2. Port 8001 on your local machine is mapped to port 8000 in the container
+3. When accessing from within Docker, use `ws://surrealdb:8000/rpc`
+4. When accessing from your local machine, use `ws://localhost:8001/rpc`
 
 For a complete working example, see the [Quickstart Example](./examples/quickstart/README.md) in the examples directory. The quickstart demonstrates:
 

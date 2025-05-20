@@ -1,0 +1,52 @@
+services:
+  graph:
+    build:
+      context: .
+      dockerfile: Dockerfile.surrealdb
+    restart: unless-stopped
+    ports:
+      - "8011:8011"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8011/healthcheck')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DATABASE_TYPE=surrealdb
+      - DATABASE_URI=ws://surrealdb:8000/rpc
+      - DATABASE_USER=${DATABASE_USER:-root}
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD:-root}
+      - DATABASE_NAMESPACE=${DATABASE_NAMESPACE:-graphiti}
+      - DATABASE_DB=${DATABASE_DB:-graphiti}
+      - PORT=8011
+    command: python -m uvicorn graph_service.main:app --host 0.0.0.0 --port 8011
+  
+  surrealdb:
+    image: surrealdb/surrealdb:latest
+    command: start --log debug --user ${DATABASE_USER:-root} --pass ${DATABASE_PASSWORD:-root} rocksdb:///data/surrealdb.db
+    restart: unless-stopped
+    user: "0:0"  # Run as root to avoid permission issues
+    healthcheck:
+      test: ["CMD", "/surreal", "isready"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    ports:
+      - "8001:8000" # HTTP & WebSocket
+    volumes:
+      - surrealdb_data:/data
+
+volumes:
+  surrealdb_data:
+    driver: local
