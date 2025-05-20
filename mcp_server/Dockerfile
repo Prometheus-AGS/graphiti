@@ -14,8 +14,16 @@ ENV PATH="/root/.local/bin:${PATH}"
 COPY pyproject.toml .
 RUN uv sync
 
-# Copy application code
+# Copy application code and support files
 COPY graphiti_mcp_server.py .
+COPY zep_graphiti.py .
+COPY config.py .
+
+# Install required dependencies
+RUN pip install surrealdb fastapi uvicorn
+
+# Set up Python path to include the graphiti_core module
+ENV PYTHONPATH="/app:${PYTHONPATH}"
 
 EXPOSE 8000
 

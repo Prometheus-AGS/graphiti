@@ -1,0 +1,22 @@
+{
+  "name": "graphiti-mcp-server",
+  "version": "1.0.0",
+  "description": "Graphiti MCP Server",
+  "main": "index.js",
+  "bin": {
+    "graphiti-mcp-server": "./bin/graphiti-mcp-server"
+  },
+  "files": [
+    "bin/graphiti-mcp-server"
+  ],
+  "scripts": {
+    "start": "./bin/graphiti-mcp-server"
+  },
+  "keywords": [
+    "graphiti",
+    "mcp",
+    "server"
+  ],
+  "author": "",
+  "license": "MIT"
+}

@@ -1,0 +1,23 @@
+services:
+  graphiti-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - path: .env.surrealdb
+        required: false # Makes the file optional. Default is 'true'
+    environment:
+      - DATABASE_TYPE=surrealdb
+      - DATABASE_URI=ws://host.docker.internal:8001/rpc
+      - DATABASE_USER=${DATABASE_USER:-root}
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD:-root}
+      - DATABASE_NAMESPACE=${DATABASE_NAMESPACE:-graphiti}
+      - DATABASE_DB=${DATABASE_DB:-graphiti}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - MODEL_NAME=${MODEL_NAME:-gpt-4-turbo-preview}
+      - PATH=/root/.local/bin:${PATH}
+    ports:
+      - "8000:8000" # Expose the MCP server via HTTP for SSE transport
+    command: ["uv", "run", "graphiti_mcp_server.py", "--transport", "sse"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

@@ -1,0 +1,25 @@
+#!/bin/bash
+
+# Set default environment variables for SurrealDB if not already set
+: ${DATABASE_TYPE:=surrealdb}
+: ${DATABASE_URI:=ws://localhost:8001/rpc}
+: ${DATABASE_USER:=root}
+: ${DATABASE_PASSWORD:=root}
+: ${DATABASE_NAMESPACE:=graphiti}
+: ${DATABASE_DB:=graphiti}
+
+# Print environment variables for debugging
+echo "Using database configuration:"
+echo "DATABASE_TYPE: $DATABASE_TYPE"
+echo "DATABASE_URI: $DATABASE_URI"
+echo "DATABASE_NAMESPACE: $DATABASE_NAMESPACE"
+echo "DATABASE_DB: $DATABASE_DB"
+
+# Check if required packages are installed
+if ! python3 -c "import openai" &> /dev/null; then
+    echo "Installing required Python packages..."
+    pip install openai surrealdb fastapi uvicorn
+fi
+
+# Run the MCP server
+python3 /Users/gqadonis/Projects/prometheus/graphiti/mcp_server/graphiti_mcp_server.py "$@"

@@ -430,6 +430,36 @@ class Neo4jConfig(BaseModel):
         )
 
 
+class DatabaseConfig(BaseModel):
+    """Configuration for database connection."""
+    
+    # Database type (neo4j or surrealdb)
+    db_type: str = 'neo4j'
+    
+    # Generic database configuration
+    uri: str | None = None
+    user: str | None = None
+    password: str | None = None
+    namespace: str | None = None
+    database: str | None = None
+    
+    @classmethod
+    def from_env(cls) -> 'DatabaseConfig':
+        """Create database configuration from environment variables."""
+        return cls(
+            db_type=os.environ.get('DATABASE_TYPE', 'neo4j').lower(),
+            uri=os.environ.get('DATABASE_URI'),
+            user=os.environ.get('DATABASE_USER'),
+            password=os.environ.get('DATABASE_PASSWORD'),
+            namespace=os.environ.get('DATABASE_NAMESPACE', 'graphiti'),
+            database=os.environ.get('DATABASE_DB', 'graphiti'),
+        )
+    
+    def is_surrealdb(self) -> bool:
+        """Check if the database type is SurrealDB."""
+        return self.db_type.lower() == 'surrealdb'
+
+
 class GraphitiConfig(BaseModel):
     """Configuration for Graphiti client.
 
@@ -438,7 +468,8 @@ class GraphitiConfig(BaseModel):
 
     llm: GraphitiLLMConfig = Field(default_factory=GraphitiLLMConfig)
     embedder: GraphitiEmbedderConfig = Field(default_factory=GraphitiEmbedderConfig)
-    neo4j: Neo4jConfig = Field(default_factory=Neo4jConfig)
+    neo4j: Neo4jConfig = Field(default_factory=Neo4jConfig)  # Keep for backward compatibility
+    database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     group_id: str | None = None
     use_custom_entities: bool = False
     destroy_graph: bool = False
@@ -446,10 +477,18 @@ class GraphitiConfig(BaseModel):
     @classmethod
     def from_env(cls) -> 'GraphitiConfig':
         """Create a configuration instance from environment variables."""
+        group_id = os.environ.get('GROUP_ID')
+        use_custom_entities = os.environ.get('USE_CUSTOM_ENTITIES', '').lower() == 'true'
+        destroy_graph = os.environ.get('DESTROY_GRAPH', '').lower() == 'true'
+
         return cls(
             llm=GraphitiLLMConfig.from_env(),
             embedder=GraphitiEmbedderConfig.from_env(),
             neo4j=Neo4jConfig.from_env(),
+            database=DatabaseConfig.from_env(),
+            group_id=group_id,
+            use_custom_entities=use_custom_entities,
+            destroy_graph=destroy_graph,
         )
 
     @classmethod
@@ -541,40 +580,25 @@ async def initialize_graphiti():
     global graphiti_client, config
 
     try:
-        # Create LLM client if possible
-        llm_client = config.llm.create_client()
-        if not llm_client and config.use_custom_entities:
-            # If custom entities are enabled, we must have an LLM client
-            raise ValueError('OPENAI_API_KEY must be set when custom entities are enabled')
-
-        # Validate Neo4j configuration
-        if not config.neo4j.uri or not config.neo4j.user or not config.neo4j.password:
-            raise ValueError('NEO4J_URI, NEO4J_USER, and NEO4J_PASSWORD must be set')
-
-        embedder_client = config.embedder.create_client()
-        cross_encoder_client = config.llm.create_cross_encoder_client()
-
-        # Initialize Graphiti client
-        graphiti_client = Graphiti(
-            uri=config.neo4j.uri,
-            user=config.neo4j.user,
-            password=config.neo4j.password,
-            llm_client=llm_client,
-            embedder=embedder_client,
-            cross_encoder=cross_encoder_client,
-        )
-
+        # Import the initialize_graphiti function from zep_graphiti.py
+        from zep_graphiti import initialize_graphiti as init_graphiti
+        from config import get_config
+        
+        # Get the configuration from the config module
+        zep_config = get_config()
+        
+        # Initialize Graphiti using the function from zep_graphiti.py
+        graphiti_client = await init_graphiti(zep_config)
+        
+        logger.info('Graphiti client initialized successfully')
+        
         # Destroy graph if requested
         if config.destroy_graph:
             logger.info('Destroying graph...')
             await clear_data(graphiti_client.driver)
 
-        # Initialize the graph database with Graphiti's indices
-        await graphiti_client.build_indices_and_constraints()
-        logger.info('Graphiti client initialized successfully')
-
         # Log configuration details for transparency
-        if llm_client:
+        if hasattr(graphiti_client, 'llm_client') and graphiti_client.llm_client:
             logger.info(f'Using OpenAI model: {config.llm.model}')
             logger.info(f'Using temperature: {config.llm.temperature}')
         else:

@@ -1,5 +1,5 @@
 [project]
-name = "mcp-server"
+name = "graphiti-mcp-server"
 version = "0.1.0"
 description = "Graphiti MCP Server"
 readme = "README.md"
@@ -9,4 +9,10 @@ dependencies = [
     "openai>=1.68.2",
     "graphiti-core>=0.8.2",
     "azure-identity>=1.21.0",
+    "surrealdb",
+    "fastapi",
+    "uvicorn",
 ]
+
+[project.scripts]
+graphiti-mcp-server = "graphiti_mcp_server:main"

@@ -1,0 +1,18 @@
+#!/bin/bash
+
+# Set environment variables for SurrealDB
+export DATABASE_TYPE=surrealdb
+export DATABASE_URI=ws://localhost:8001/rpc
+export DATABASE_USER=root
+export DATABASE_PASSWORD=root
+export DATABASE_NAMESPACE=graphiti
+export DATABASE_DB=graphiti
+
+# Check if required packages are installed
+if ! python3 -c "import openai" &> /dev/null; then
+    echo "Installing required Python packages..."
+    pip install openai surrealdb fastapi uvicorn
+fi
+
+# Run the MCP server
+python3 /Users/gqadonis/Projects/prometheus/graphiti/mcp_server/graphiti_mcp_server.py "$@"

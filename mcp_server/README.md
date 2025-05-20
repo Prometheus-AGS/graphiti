@@ -50,8 +50,10 @@ cd graphiti && pwd
 ### Prerequisites
 
 1. Ensure you have Python 3.10 or higher installed.
-2. A running Neo4j database (version 5.26 or later required)
-3. OpenAI API key for LLM operations
+2. One of the following databases:
+   - Neo4j database (version 5.26 or later)
+   - SurrealDB (version 1.2.0 or later)
+3. OpenAI API key for LLM operations (optional but recommended for entity extraction)
 
 ### Setup
 
@@ -99,6 +101,46 @@ With options:
 uv run graphiti_mcp_server.py --model gpt-4.1-mini --transport sse
 ```
 
+### Using uvx for SSE Transport
+
+For a more streamlined experience with SSE transport, you can use `uvx` which is an enhanced version of `uv` with additional features:
+
+```bash
+# Install uvx if you don't have it already
+pip install uvx
+
+# Run the MCP server with SSE transport
+uvx run graphiti_mcp_server.py --transport sse
+```
+
+You can also specify additional options:
+
+```bash
+uvx run graphiti_mcp_server.py --transport sse --model gpt-4-turbo-preview --group-id my-project
+```
+
+#### For SurrealDB users
+
+```bash
+# Make sure your .env.surrealdb file is set up with the correct configuration
+cp .env.surrealdb.example .env.surrealdb
+
+# Run with SurrealDB configuration
+uvx run graphiti_mcp_server.py --transport sse --env-file .env.surrealdb
+```
+
+Alternatively, you can set the environment variables directly:
+
+```bash
+DATABASE_TYPE=surrealdb \
+DATABASE_URI=ws://localhost:8001/rpc \
+DATABASE_USER=root \
+DATABASE_PASSWORD=root \
+DATABASE_NAMESPACE=graphiti \
+DATABASE_DB=graphiti \
+uvx run graphiti_mcp_server.py --transport sse
+```
+
 Available arguments:
 
 - `--model`: Specify the model name to use with the LLM client
@@ -106,6 +148,7 @@ Available arguments:
 - `--group-id`: Set a namespace for the graph (optional)
 - `--destroy-graph`: Destroy all Graphiti graphs (use with caution)
 - `--use-custom-entities`: Enable entity extraction using the predefined ENTITY_TYPES
+- `--env-file`: Specify a custom environment file to use (default: .env)
 
 ### Docker Deployment
 
@@ -147,27 +190,103 @@ The Docker Compose setup includes a Neo4j container with the following default c
 - URI: `bolt://neo4j:7687` (from within the Docker network)
 - Memory settings optimized for development use
 
-#### Running with Docker Compose
+#### SurrealDB Configuration (Alternative)
 
-Start the services using Docker Compose:
+As an alternative to Neo4j, you can use SurrealDB with Graphiti MCP server. SurrealDB version 1.2.0 or later is required.
 
-```bash
-docker compose up
-```
+##### Setting up SurrealDB
 
-Or if you're using an older version of Docker Compose:
+1. Install SurrealDB (version 1.2.0 or later):
 
 ```bash
-docker-compose up
+# macOS with Homebrew
+brew install surrealdb/tap/surreal
+
+# Linux
+curl -sSf https://install.surrealdb.com | sh
+
+# Windows
+choco install surreal
 ```
 
-This will start both the Neo4j database and the Graphiti MCP server. The Docker setup:
+1. Start SurrealDB:
 
-- Uses `uv` for package management and running the server
-- Installs dependencies from the `pyproject.toml` file
-- Connects to the Neo4j container using the environment variables
+```bash
+surreal start --user root --pass root --bind 0.0.0.0:8001 memory
+```
+
+##### Docker Compose Setup
+
+A Docker Compose configuration is provided for running the MCP server with SurrealDB:
+
+```bash
+# Start the MCP server with SurrealDB configuration
+docker compose -f docker-compose-surrealdb.yml up -d
+```
+
+This configuration:
+
+- Connects to a SurrealDB instance running on the host machine at `ws://host.docker.internal:8001/rpc`
+- Uses the environment variables from `.env.surrealdb` file
 - Exposes the server on port 8000 for HTTP-based SSE transport
-- Includes a healthcheck for Neo4j to ensure it's fully operational before starting the MCP server
+
+To set up the SurrealDB environment:
+```bash
+# Create your SurrealDB environment file
+cp .env.surrealdb.example .env.surrealdb
+# Edit the file to set your API keys and database configuration
+```
+
+##### Running with the Script
+
+For convenience, a shell script is provided to run the MCP server with SurrealDB:
+
+```bash
+# Make the script executable
+chmod +x bin/graphiti-mcp-server
+
+# Run the MCP server with SurrealDB
+./bin/graphiti-mcp-server
+```
+
+The script sets the following environment variables for SurrealDB:
+
+```bash
+DATABASE_TYPE=surrealdb
+DATABASE_URI=ws://localhost:8001/rpc
+DATABASE_USER=root
+DATABASE_PASSWORD=root
+DATABASE_NAMESPACE=graphiti
+DATABASE_DB=graphiti
+```
+
+## Setting up with Codeium, Claude, and Other MCP Clients
+
+To use the Graphiti MCP server with MCP clients like Codeium, Claude, or others, you need to configure the client to connect to the running MCP server.
+
+### Codeium Configuration
+
+To configure Codeium to use the Graphiti MCP server:
+
+1. Edit the MCP configuration file at `~/.codeium/windsurf/mcp_config.json`
+2. Add or update the `graphiti` section to point to your running MCP server:
+
+```json
+{
+  "graphiti": {
+    "serverUrl": "http://localhost:8000/sse"
+  }
+}
+```
+
+This configuration tells Codeium to connect to the Graphiti MCP server running on localhost port 8000 using the SSE transport.
+
+### Claude Configuration
+
+To configure Claude to use the Graphiti MCP server:
+
+1. Edit the MCP configuration file at `~/Library/Application Support/Windsurf/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json`
+2. Add or update the `graphiti` section to point to your running MCP server.
 
 ## Integrating with MCP Clients
 
